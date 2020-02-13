@@ -59,7 +59,7 @@
   []
   [:button
    {:style
-    {:display   "block"
+    {:display   "inline-block"
      :font-size "2em"
      :border    "none"
      :cursor    "pointer"}
@@ -129,6 +129,7 @@
 (defn game
   []
   [:div
-   [level-selector]
-   [reset-button]
+   [:div {:style {:display "flex" :align-items "center"}}
+    [level-selector]
+    [reset-button]]
    [grid]])
