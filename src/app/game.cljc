@@ -35,7 +35,7 @@
   [width height mines]
   (for [row  (range height)
         col  (range width)
-        :let [coords [row col]]]
+        :let [coords [col row]]]
     {:coords coords
      :state  :hidden
      :value  (calc-value coords mines)}))

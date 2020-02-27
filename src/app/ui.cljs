@@ -66,10 +66,10 @@
     :on-click #(reset-game! (:game @state))}
    (condp = (-> @state :game :status)
      :win  "😎"
-     :boom "🙀"
-     "😊")])
+     :boom "🌚"
+     "🌝")])
 
-(defn grid
+(defn table
   []
   (let [width  (-> @state :level levels :width)
         height (-> @state :level levels :height)
@@ -77,54 +77,50 @@
                  :boom "1px solid red"
                  :win  "1px solid green"
                  "1px solid gray")]
+    [:table
+     {:cellspacing 0
+      :styl
+      {:border           border
+       :background-color "#808080"}}
 
-    (into
+     (into
+      [:tbody]
+      (for [row (range height)]
+        (into
+         [:tr]
+         (for [col  (range width)
+               :let [coords [col row]
+                     cell    (-> @state :game (get coords))
+                     hidden? (#{:hidden :flagged} (:state cell))]]
+           ;; Cell
+           [:td
+            {:on-click        (fn [evt]
+                                (.preventDefault evt)
+                                (play! (:game @state) coords))
+             :on-context-menu (fn [evt]
+                                (.preventDefault evt)
+                                (toggle-flag! (:game @state) coords))
+             :style
+             {:width            "1em"
+              :height           "1em"
+              :cursor           (if hidden? "pointer" "default")
+              :box-shadow       (if hidden?
+                                  "2px 2px #ffffff inset, -2px -2px grey inset"
+                                  "initial")
+              :border           border
+              :background-color "#c0c0c0"
+              :font-weight      "bold"
+              :font-size        "2em"
+              :text-align       "center"
+              :color            (value-colors (:value cell))}}
 
-     ;; Container
-     [:div
-      {:style
-       {:display               "grid"
-        :align-items           "center"
-        :width                 (str (* 2.5 width) "em")
-        :height                (str (* 2.5 height) "em")
-        :border                border
-        :grid-template-rows    (str "repeat(" height ", 1fr)")
-        :grid-template-columns (str "repeat(" width ", 1fr)")
-        :background-color      "#808080"}}]
-
-     (for [row  (range height)
-           col  (range width)
-           :let [coords [row col]
-                 cell    (-> @state :game (get coords))
-                 hidden? (#{:hidden :flagged} (:state cell))]]
-
-       ;; Cell
-       [:div
-        {:on-click        (fn [evt]
-                            (.preventDefault evt)
-                            (play! (:game @state) coords))
-         :on-context-menu (fn [evt]
-                            (.preventDefault evt)
-                            (toggle-flag! (:game @state) coords))
-         :style
-         {:cursor           (if hidden? "pointer" "default")
-          :box-shadow       (if hidden?
-                              "2px 2px #ffffff inset, -2px -2px grey inset"
-                              "initial")
-          :border           border
-          :background-color "#c0c0c0"
-          :font-weight      "bold"
-          :font-size        "2em"
-          :text-align       "center"
-          :color            (value-colors (:value cell))}}
-
-        ;; Cell content
-        (condp = (:state cell)
-          :hidden  \u2003 ;; ZWSP
-          :flagged [:span {:style {:font-size "0.8em"}} "🚩"]
-          (if (= :boom (:value cell))
-            [:span {:style {:font-size "0.8em"}} "🙀"]
-            (str (:value cell))))]))))
+            ;; Cell content
+            (condp = (:state cell)
+              :hidden  \u2003 ;; ZWSP
+              :flagged [:span {:style {:font-size "0.8em"}} "🚩"]
+              (if (= :boom (:value cell))
+                [:span {:style {:font-size "0.8em"}} "🙀"]
+                (str (:value cell))))]))))]))
 
 (defn game
   []
@@ -132,4 +128,4 @@
    [:div {:style {:display "flex" :align-items "center"}}
     [level-selector]
     [reset-button]]
-   [grid]])
+   [table]])
