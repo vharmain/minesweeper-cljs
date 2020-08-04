@@ -28,7 +28,7 @@
 (defn calc-value
   [coords mines]
   (if (contains? mines coords)
-    :boom
+    :cell.value/boom
     (count (mines-around coords mines))))
 
 (defn calc-grid
@@ -36,23 +36,23 @@
   (for [row  (range height)
         col  (range width)
         :let [coords [col row]]]
-    {:coords coords
-     :state  :hidden
-     :value  (calc-value coords mines)}))
+    {:cell/coords coords
+     :cell/state  :cell.state/hidden
+     :cell/value  (calc-value coords mines)}))
 
 (defn make-game
-  [{:keys [width height mines-count]}]
+  [#:game{:keys [width height mines-count]}]
   (->> (gen-mines width height)
        distinct
        (take mines-count)
        set
        (calc-grid width height)
-       (map (juxt :coords identity))
-       (into {:status :ok :mines-count mines-count})))
+       (map (juxt :cell/coords identity))
+       (into {:game/status :game.status/ok :game/mines-count mines-count})))
 
 (defn reveal
   [game coords]
-  (update game coords assoc :state :visible))
+  (update game coords assoc :cell/state :cell.state/visible))
 
 (defn reveal-around
   [game coords]
@@ -65,19 +65,21 @@
   (->> (coords-around coords)
        (filter (fn [coords]
                  (and
-                  (-> coords game :value zero?)
-                  (-> coords game :state (= :hidden)))))))
+                  (-> coords game :cell/value zero?)
+                  (-> coords game :cell/state (= :cell.state/hidden)))))))
 
 (defn hidden-cells
   [game]
   (->> game
        vals
-       (filter (fn [cell] (#{:hidden :flagged} (:state cell))))))
+       (filter
+        (fn [cell]
+          (#{:cell.state/hidden :cell.state/flagged} (:cell/state cell))))))
 
 (defn mines
   [game]
   (->> game
-       (filter (fn [[_ cell]] (= :boom (:value cell))))))
+       (filter (fn [[_ cell]] (= :cell.value/boom (:cell/value cell))))))
 
 (defn win?
   [game]
@@ -85,34 +87,36 @@
 
 (defn toggle-flag
   [game coords]
-  (update-in game [coords :state] {:flagged :hidden :hidden :flagged}))
+  (update-in game [coords :cell/state] {:cell.state/flagged :cell.state/hidden
+                                        :cell.state/hidden  :cell.state/flagged}))
 
 (defn flag
   [game coords]
-  (assoc-in game [coords :state] :flagged))
+  (assoc-in game [coords :cell/state] :cell.state/flagged))
 
 (defn should-play?
   "Returns false if game is not in playable state or given coords are
   protected from accidental clicking by flagging."
   [game coords]
-  (let [cell-state (-> coords game :state)]
-    (and (= :ok (:status game)) (not= :flagged cell-state))))
+  (let [cell-state (-> coords game :cell/state)]
+    (and (= :game.status/ok (:game/status game))
+         (not= :cell.state/flagged cell-state))))
 
 (defn play
   [game coords]
   (if (should-play? game coords)
 
     (let [game (reveal game coords) ;; Always reveal clicked cell
-          v    (get-in game [coords :value])]
+          v    (get-in game [coords :cell/value])]
 
       (cond
         ;; Mine was revealed => end game with :boom
-        (= :boom v) (assoc game :status v)
+        (= :cell.value/boom v) (assoc game :game/status :game.status/boom)
 
         ;; Last hidden 'non-mine' was reveled => end game with :win
-        (win? game) (let [mines (map :coords (hidden-cells game))]
+        (win? game) (let [mines (map :cell/coords (hidden-cells game))]
                       (-> (reduce flag game mines)
-                          (assoc :status :win)))
+                          (assoc :game/status :game.status/win)))
 
         ;; Zero was revealed => recursively reveal connected zeros
         (zero? v) (let [zeros (hidden-zeros-around game coords)
@@ -123,3 +127,6 @@
         :else game))
 
     game))
+
+(comment
+  (make-game {:game/width 1 :game/height 5 :game/mines-count 1}))

@@ -15,36 +15,37 @@
    8 "#808080"})
 
 (def levels
-  {:easy         {:width 9 :height 9 :mines-count 10}
-   :intermediate {:width 16 :height 16 :mines-count 40}
-   :expert       {:width 30 :height 16 :mines-count 99}})
+  {:game.level/easy         {:game/width 9 :game/height 9 :game/mines-count 10}
+   :game.level/intermediate {:game/width 16 :game/height 16 :game/mines-count 40}
+   :game.level/expert       {:game/width 30 :game/height 16 :game/mines-count 99}})
 
 (def init-state
-  {:history []
-   :level   :easy
-   :game    (game/make-game (:easy levels))})
+  {:game/history []
+   :game/level   :game.level/easy
+   :game/game    (game/make-game (:game.level/easy levels))})
 
 (defonce state
   (r/atom init-state))
 
 (defn play!
   [game coords]
-  (swap! state assoc :game (game/play game coords)))
+  (swap! state assoc :game/game (game/play game coords)))
 
 (defn toggle-flag!
   [game coords]
-  (swap! state assoc :game (game/toggle-flag game coords)))
+  (swap! state assoc :game/game (game/toggle-flag game coords)))
 
 (defn reset-game! [game]
   (swap! state (fn [old-state]
                  (-> old-state
-                     (update :history conj game)
-                     (assoc :game (game/make-game (levels (:level @state))))))))
+                     (update :game/history conj game)
+                     (assoc :game/game (game/make-game
+                                        (levels (:game/level @state))))))))
 
 (defn select-level!
   [level]
-  (swap! state assoc :level level)
-  (reset-game! (:game @state)))
+  (swap! state assoc :game/level level)
+  (reset-game! (:game/game @state)))
 
 (defn level-selector
   []
@@ -63,22 +64,22 @@
      :font-size "2em"
      :border    "none"
      :cursor    "pointer"}
-    :on-click #(reset-game! (:game @state))}
-   (condp = (-> @state :game :status)
-     :win  "😎"
-     :boom "🌚"
+    :on-click #(reset-game! (:game/game @state))}
+   (condp = (-> @state ::game/game :game/status)
+     :game.status/win  "😎"
+     :game.status/boom "🌚"
      "🌝")])
 
 (defn table
   []
-  (let [width  (-> @state :level levels :width)
-        height (-> @state :level levels :height)
-        border (case (get-in @state [:game :status])
-                 :boom "1px solid red"
-                 :win  "1px solid green"
+  (let [width  (-> @state :game/level levels :game/width)
+        height (-> @state :game/level levels :game/height)
+        border (case (get-in @state [:game/game :game/status])
+                 :game.status/boom "1px solid red"
+                 :game.status/win  "1px solid green"
                  "1px solid gray")]
     [:table
-     {:cellspacing 0
+     {:cellSpacing 0
       :styl
       {:border           border
        :background-color "#808080"}}
@@ -90,16 +91,17 @@
          [:tr]
          (for [col  (range width)
                :let [coords [col row]
-                     cell    (-> @state :game (get coords))
-                     hidden? (#{:hidden :flagged} (:state cell))]]
+                     cell    (-> @state :game/game (get coords))
+                     hidden? (#{:cell.state/hidden :cell.state/flagged}
+                              (:cell/state cell))]]
            ;; Cell
            [:td
             {:on-click        (fn [evt]
                                 (.preventDefault evt)
-                                (play! (:game @state) coords))
+                                (play! (:game/game @state) coords))
              :on-context-menu (fn [evt]
                                 (.preventDefault evt)
-                                (toggle-flag! (:game @state) coords))
+                                (toggle-flag! (:game/game @state) coords))
              :style
              {:width            "1em"
               :height           "1em"
@@ -112,15 +114,15 @@
               :font-weight      "bold"
               :font-size        "2em"
               :text-align       "center"
-              :color            (value-colors (:value cell))}}
+              :color            (value-colors (:cell/value cell))}}
 
             ;; Cell content
-            (condp = (:state cell)
-              :hidden  \u2003 ;; ZWSP
-              :flagged [:span {:style {:font-size "0.8em"}} "🚩"]
-              (if (= :boom (:value cell))
+            (condp = (:cell/state cell)
+              :cell.state/hidden  \u2003 ;; ZWSP
+              :cell.state/flagged [:span {:style {:font-size "0.8em"}} "🚩"]
+              (if (= :cell.value/boom (:cell/value cell))
                 [:span {:style {:font-size "0.8em"}} "🙀"]
-                (str (:value cell))))]))))]))
+                (str (:cell/value cell))))]))))]))
 
 (defn game
   []
@@ -129,3 +131,5 @@
     [level-selector]
     [reset-button]]
    [table]])
+
+(-> @state :game/game :game/status)
