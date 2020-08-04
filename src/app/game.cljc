@@ -42,35 +42,41 @@
 
 (defn make-game
   [#:game{:keys [width height mines-count]}]
-  (->> (gen-mines width height)
-       distinct
-       (take mines-count)
-       set
-       (calc-grid width height)
-       (map (juxt :cell/coords identity))
-       (into {:game/status :game.status/ok :game/mines-count mines-count})))
+  (let [init {:game/status      :game.status/ok
+              :game/mines-count mines-count}]
+    (->> (gen-mines width height)
+         distinct
+         (take mines-count)
+         set
+         (calc-grid width height)
+         (map (juxt :cell/coords identity))
+         (into {})
+         (assoc init :game/board))))
 
 (defn reveal
   [game coords]
-  (update game coords assoc :cell/state :cell.state/visible))
+  (update-in  game [:game/board coords] assoc :cell/state :cell.state/visible))
 
 (defn reveal-around
   [game coords]
   (->> (coords-around coords)
-       (filter game)
+       (filter (:game/board game))
        (reduce reveal game)))
 
 (defn hidden-zeros-around
   [game coords]
   (->> (coords-around coords)
-       (filter (fn [coords]
-                 (and
-                  (-> coords game :cell/value zero?)
-                  (-> coords game :cell/state (= :cell.state/hidden)))))))
+       (filter
+        (fn [coords]
+          (let [cell (get-in game [:game/board coords])]
+            (and
+             (zero? (:cell/value cell))
+             (= :cell.state/hidden (:cell/state cell))))))))
 
 (defn hidden-cells
   [game]
   (->> game
+       :game/board
        vals
        (filter
         (fn [cell]
@@ -79,6 +85,7 @@
 (defn mines
   [game]
   (->> game
+       :game/board
        (filter (fn [[_ cell]] (= :cell.value/boom (:cell/value cell))))))
 
 (defn win?
@@ -87,18 +94,19 @@
 
 (defn toggle-flag
   [game coords]
-  (update-in game [coords :cell/state] {:cell.state/flagged :cell.state/hidden
-                                        :cell.state/hidden  :cell.state/flagged}))
+  (let [lookup {:cell.state/flagged :cell.state/hidden
+                :cell.state/hidden  :cell.state/flagged}]
+    (update-in game [:game/board coords :cell/state] lookup)))
 
 (defn flag
   [game coords]
-  (assoc-in game [coords :cell/state] :cell.state/flagged))
+  (assoc-in game [:game/board coords :cell/state] :cell.state/flagged))
 
 (defn should-play?
   "Returns false if game is not in playable state or given coords are
   protected from accidental clicking by flagging."
   [game coords]
-  (let [cell-state (-> coords game :cell/state)]
+  (let [cell-state (get-in game [:game/board coords :cell/state])]
     (and (= :game.status/ok (:game/status game))
          (not= :cell.state/flagged cell-state))))
 
@@ -107,7 +115,7 @@
   (if (should-play? game coords)
 
     (let [game (reveal game coords) ;; Always reveal clicked cell
-          v    (get-in game [coords :cell/value])]
+          v    (get-in game [:game/board coords :cell/value])]
 
       (cond
         ;; Mine was revealed => end game with :boom

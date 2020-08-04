@@ -91,13 +91,15 @@
          [:tr]
          (for [col  (range width)
                :let [coords [col row]
-                     cell    (-> @state :game/game (get coords))
+                     cell    (-> @state :game/game :game/board (get coords))
                      hidden? (#{:cell.state/hidden :cell.state/flagged}
                               (:cell/state cell))]]
            ;; Cell
            [:td
             {:on-click        (fn [evt]
                                 (.preventDefault evt)
+                                (prn "COOORDS:")
+                                (prn coords)
                                 (play! (:game/game @state) coords))
              :on-context-menu (fn [evt]
                                 (.preventDefault evt)
@@ -132,4 +134,4 @@
     [reset-button]]
    [table]])
 
-(-> @state :game/game :game/status)
+(-> @state :game/game :game/board (get [0 0]))
