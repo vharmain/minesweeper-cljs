@@ -98,8 +98,6 @@
            [:td
             {:on-click        (fn [evt]
                                 (.preventDefault evt)
-                                (prn "COOORDS:")
-                                (prn coords)
                                 (play! (:game/game @state) coords))
              :on-context-menu (fn [evt]
                                 (.preventDefault evt)
