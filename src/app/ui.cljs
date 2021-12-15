@@ -65,7 +65,7 @@
      :border    "none"
      :cursor    "pointer"}
     :on-click #(reset-game! (:game/game @state))}
-   (condp = (-> @state ::game/game :game/status)
+   (condp = (-> @state :game/game :game/status)
      :game.status/win  "😎"
      :game.status/boom "🌚"
      "🌝")])
