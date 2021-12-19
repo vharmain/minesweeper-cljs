@@ -33,8 +33,8 @@
 
 (defn calc-grid
   [width height mines]
-  (for [row  (range height)
-        col  (range width)
+  (for [col  (range width)
+        row  (range height)
         :let [coords [col row]]]
     {:cell/coords coords
      :cell/state  :cell.state/hidden

@@ -89,7 +89,6 @@
        :aspect-ratio     "1"
        :cursor           (if hidden? "pointer" "default")
        :box-shadow       (if hidden?
-                           #_"2px 2px #ffffff inset, -2px -2px grey inset"
                            ".08em .08em #ffffff inset, -.08em -.08em grey inset"
                            "initial")
        :border           border
@@ -105,8 +104,8 @@
        {:text-align "center"}}
 
       (condp = (:cell/state cell)
-        :cell.state/hidden #_\u2003 ;; ZWSP
-        \u2003
+        :cell.state/hidden
+        \u2003 ;ZSWP
 
         :cell.state/flagged
         [:span {:style {:font-size ".8em"}} "🚩"]
@@ -128,8 +127,8 @@
        {:display               "grid"
         :max-width             (str (* 2.8 width) "em")
         :grid-template-columns (->> "1fr" (repeat width) (str/join " "))}}]
-     (for [col  (range width)
-           row  (range height)
+     (for [row  (range height)
+           col  (range width)
            :let [coords [col row]]]
        [cell :div coords border]))))
 
@@ -139,7 +138,4 @@
    [:div {:style {:display "flex" :align-items "center"}}
     [level-selector]
     [reset-button]]
-   #_[table]
    [grid]])
-
-(-> @state :game/game :game/board (get [0 0]))
