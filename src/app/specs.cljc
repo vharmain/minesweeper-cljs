@@ -26,7 +26,7 @@
 (s/def :game/mines-count (s/int-in 0 100))
 
 (s/def :game/game
-  (s/keys :reg [:game/board :game/status :game/mines-count]))
+  (s/keys :req [:game/board :game/status :game/mines-count]))
 
 (comment
   (s/valid? :cell.value/boom :cell.value/boom)
