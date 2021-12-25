@@ -77,28 +77,31 @@
         hidden? (#{:cell.state/hidden :cell.state/flagged}
                  (:cell/state cell))]
     [component
-     {:on-click        (fn [evt]
-                         (.preventDefault evt)
-                         (play! (:game/game @state) coords))
+     {:on-click (fn [evt]
+                  (.preventDefault evt)
+                  (play! (:game/game @state) coords))
+
       :on-context-menu (fn [evt]
                          (.preventDefault evt)
                          (toggle-flag! (:game/game @state) coords))
-      :style
-      {:display          "grid"
-       :align-items      "center"
-       :aspect-ratio     "1"
-       :cursor           (if hidden? "pointer" "default")
-       :box-shadow       (if hidden?
-                           ".08em .08em #ffffff inset, -.08em -.08em grey inset"
-                           "initial")
-       :border           border
-       :background-color "#c0c0c0"
-       :font-weight      "bold"
-       :font-size        "200%"
-       :text-align       "center"
-       :color            (value-colors (:cell/value cell))}}
 
-     ;; Cell content
+      :style
+      {:display             "grid"
+       :align-items         "center"
+       :aspect-ratio        "1"
+       :-webkit-user-select "none !important"
+       :cursor              (if hidden? "pointer" "default")
+       :box-shadow          (if hidden?
+                              ".08em .08em #ffffff inset, -.08em -.08em grey inset"
+                              "initial")
+       :border              border
+       :background-color    "#c0c0c0"
+       :font-weight         "bold"
+       :font-size           "200%"
+       :text-align          "center"
+       :color               (value-colors (:cell/value cell))}}
+
+       ;; Cell content
      [:div
       {:style
        {:text-align "center"}}
