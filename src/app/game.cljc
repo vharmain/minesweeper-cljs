@@ -55,7 +55,7 @@
 
 (defn reveal
   [game coords]
-  (update-in  game [:game/board coords] assoc :cell/state :cell.state/visible))
+  (update-in game [:game/board coords] assoc :cell/state :cell.state/visible))
 
 (defn reveal-around
   [game coords]
@@ -86,7 +86,8 @@
   [game]
   (->> game
        :game/board
-       (filter (fn [[_ cell]] (= :cell.value/boom (:cell/value cell))))))
+       vals
+       (filter (fn [cell] (= :cell.value/boom (:cell/value cell))))))
 
 (defn win?
   [game]
@@ -118,8 +119,10 @@
           v    (get-in game [:game/board coords :cell/value])]
 
       (cond
-        ;; Mine was revealed => end game with :boom
-        (= :cell.value/boom v) (assoc game :game/status :game.status/boom)
+        ;; Mine was revealed => reveal all mines and end game with :boom
+        (= :cell.value/boom v) (let [mines (map :cell/coords (mines game))]
+                                 (-> (reduce reveal game mines)
+                                     (assoc :game/status :game.status/boom)))
 
         ;; Last hidden 'non-mine' was reveled => end game with :win
         (win? game) (let [mines (map :cell/coords (hidden-cells game))]
