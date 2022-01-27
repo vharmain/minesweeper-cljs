@@ -89,7 +89,6 @@
       {:display             "grid"
        :align-items         "center"
        :aspect-ratio        "1"
-       :-webkit-user-select "none !important"
        :cursor              (if hidden? "pointer" "default")
        :box-shadow          (if hidden?
                               ".08em .08em #ffffff inset, -.08em -.08em grey inset"
@@ -102,7 +101,7 @@
        :color               (value-colors (:cell/value cell))}}
 
        ;; Cell content
-     [:div
+     [:div.noselect
       {:style
        {:text-align "center"}}
 
