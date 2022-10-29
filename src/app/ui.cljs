@@ -138,6 +138,8 @@
                       (.preventDefault evt)
                       (play! (:game/game @state) coords))
 
+          ; Safari iOS does not generate on-context-menu, handled
+          ; by on-touch events:
           :on-context-menu (fn [evt]
                              (.preventDefault evt))
 
