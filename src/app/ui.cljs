@@ -71,50 +71,107 @@
      :game.status/boom "🌚"
      "🌝")])
 
-(defn- cell
-  [component coords border]
-  (let [cell    (-> @state :game/game :game/board (get coords))
-        hidden? (#{:cell.state/hidden :cell.state/flagged}
-                 (:cell/state cell))]
-    [component
-     {:on-click (fn [evt]
-                  (.preventDefault evt)
-                  (play! (:game/game @state) coords))
 
-      :on-context-menu (fn [evt]
-                         (.preventDefault evt)
-                         (toggle-flag! (:game/game @state) coords))
+(defn touch-inside? [^js evt {:keys [x1 y1 x2 y2]}]
+  (let [touch-list (.-targetTouches evt)]
+    (if (pos? (.-length touch-list))
+      (let [touch-item (.item touch-list 0)
+            x (.-clientX touch-item)
+            y (.-clientY touch-item)]
+        (and (<= x1 x x2)
+             (<= y1 y y2)))
+      false)))
 
-      :style
-      {:display             "grid"
-       :align-items         "center"
-       :aspect-ratio        "1"
-       :cursor              (if hidden? "pointer" "default")
-       :box-shadow          (if hidden?
-                              ".08em .08em #ffffff inset, -.08em -.08em grey inset"
-                              "initial")
-       :border              border
-       :background-color    "#c0c0c0"
-       :font-weight         "bold"
-       :font-size           "200%"
-       :text-align          "center"
-       :color               (value-colors (:cell/value cell))}}
+
+(def flag-delay 200)
+
+
+(defn- touch-event [touch-state event-type ^js evt]
+  (when evt (.preventDefault evt))
+  (r/rswap! touch-state
+            (case event-type
+              :on-timer (fn [{:as tstate :keys [coords]}]
+                          (js/console.log "touch: Long!")
+                          (toggle-flag! (:game/game @state) coords)
+                          (assoc tstate :timer nil))
+              :on-touch-start (fn [{:as tstate :keys [timer]}]
+                                (js/clearTimeout timer)
+                                (let [target (.-target evt)
+                                      bounds (.getBoundingClientRect target)]
+                                  (assoc tstate
+                                         :timer (js/setTimeout (fn [] (touch-event touch-state :on-timer nil)) flag-delay)
+                                         :bounds {:x1 (.-left bounds)
+                                                  :x2 (.-right bounds)
+                                                  :y1 (.-top bounds)
+                                                  :y2 (.-bottom bounds)})))
+              :on-touch-end (fn [{:as tstate :keys [timer coords]}]
+                              (js/clearTimeout timer)
+                              (when timer
+                                (js/console.log "touch: click")
+                                (play! (:game/game @state) coords))
+                              (assoc tstate :timer nil))
+              :on-touch-move (fn [{:as tstate :keys [timer bounds]}]
+                               (if (touch-inside? evt bounds)
+                                 tstate
+                                 (do (js/clearTimeout timer)
+                                     (assoc tstate :timer nil))))
+              :on-touch-cancel identity)))
+
+
+(defn- cell [_component coords _border]
+  (let [touch-state (r/atom {:coords coords})
+        on-touch-start (partial touch-event touch-state :on-touch-start)
+        on-touch-move (partial touch-event touch-state :on-touch-move)
+        on-touch-end (partial touch-event touch-state :on-touch-end)
+        on-touch-cancel (partial touch-event touch-state :on-touch-cancel)]
+    (fn [component coords border]
+      (let [cell    (-> @state :game/game :game/board (get coords))
+            hidden? (#{:cell.state/hidden :cell.state/flagged}
+                     (:cell/state cell))]
+        [component
+         {:on-touch-start on-touch-start
+          :on-touch-move on-touch-move
+          :on-touch-end on-touch-end
+          :on-touch-cancel on-touch-cancel
+
+          :on-click (fn [evt]
+                      (.preventDefault evt)
+                      (play! (:game/game @state) coords))
+
+          :on-context-menu (fn [evt]
+                             (.preventDefault evt))
+
+          :style
+          {:display             "grid"
+           :align-items         "center"
+           :aspect-ratio        "1"
+           :cursor              (if hidden? "pointer" "default")
+           :box-shadow          (if hidden?
+                                  ".08em .08em #ffffff inset, -.08em -.08em grey inset"
+                                  "initial")
+           :border              border
+           :outline             0
+           :background-color    "#c0c0c0"
+           :font-weight         "bold"
+           :font-size           "200%"
+           :text-align          "center"
+           :color               (value-colors (:cell/value cell))}}
 
        ;; Cell content
-     [:div.noselect
-      {:style
-       {:text-align "center"}}
+         [:div.noselect
+          {:style
+           {:text-align "center"}}
 
-      (condp = (:cell/state cell)
-        :cell.state/hidden
-        \u2003 ;ZSWP
+          (condp = (:cell/state cell)
+            :cell.state/hidden
+            \u2003 ;ZSWP
 
-        :cell.state/flagged
-        [:span {:style {:font-size ".8em"}} "🚩"]
+            :cell.state/flagged
+            [:span {:style {:font-size ".8em"}} "🚩"]
 
-        (if (= :cell.value/boom (:cell/value cell))
-          [:span {:style {:font-size ".8em"}} "🙀"]
-          (str (:cell/value cell))))]]))
+            (if (= :cell.value/boom (:cell/value cell))
+              [:span {:style {:font-size ".8em"}} "🙀"]
+              (str (:cell/value cell))))]]))))
 
 (defn grid []
   (let [width  (-> @state :game/level levels :game/width)
