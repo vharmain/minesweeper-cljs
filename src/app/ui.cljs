@@ -2,7 +2,9 @@
   (:require
    [clojure.string :as str]
    [reagent.core :as r]
-   [app.game :as game]))
+   [app.game :as game]
+   [goog.object :as go]))
+
 
 (def value-colors
   {0 "#c0c0c0"
@@ -72,76 +74,102 @@
      "🌝")])
 
 
-(defn touch-inside? [^js evt {:keys [x1 y1 x2 y2]}]
+(defn get-touch-xy [^js evt]
   (let [touch-list (.-targetTouches evt)]
     (if (pos? (.-length touch-list))
-      (let [touch-item (.item touch-list 0)
-            x (.-clientX touch-item)
-            y (.-clientY touch-item)]
-        (and (<= x1 x x2)
-             (<= y1 y y2)))
-      false)))
+      (let [touch-item (.item touch-list 0)]
+        [(.-clientX touch-item) (.-clientY touch-item)])
+      [0 0])))
+
+
+(defn get-mouse-xy [^js evt]
+  [(.-clientX evt) (.-clientY evt)])
+
+
+(defn evt-inside? [^js evt {:keys [x1 y1 x2 y2]}]
+  (let [[x y] (if (-> evt .-type (= "touchmove"))
+                (get-touch-xy evt)
+                (get-mouse-xy evt))]
+    (and (<= x1 x x2)
+         (<= y1 y y2))))
 
 
 (def flag-delay 200)
+(def timer-evt (doto (js/Object.)
+                 (go/set "type" "timer")
+                 (go/set "preventDefault" identity)))
 
 
-(defn- touch-event [touch-state event-type ^js evt]
-  (when evt (.preventDefault evt))
-  (r/rswap! touch-state
-            (case event-type
-              :on-timer (fn [{:as tstate :keys [coords]}]
-                          (js/console.log "touch: Long!")
-                          (toggle-flag! (:game/game @state) coords)
-                          (assoc tstate :timer nil))
-              :on-touch-start (fn [{:as tstate :keys [timer]}]
-                                (js/clearTimeout timer)
-                                (let [target (.-target evt)
-                                      bounds (.getBoundingClientRect target)]
-                                  (assoc tstate
-                                         :timer (js/setTimeout (fn [] (touch-event touch-state :on-timer nil)) flag-delay)
-                                         :bounds {:x1 (.-left bounds)
-                                                  :x2 (.-right bounds)
-                                                  :y1 (.-top bounds)
-                                                  :y2 (.-bottom bounds)})))
-              :on-touch-end (fn [{:as tstate :keys [timer coords]}]
-                              (js/clearTimeout timer)
-                              (when timer
-                                (js/console.log "touch: click")
-                                (play! (:game/game @state) coords))
-                              (assoc tstate :timer nil))
-              :on-touch-move (fn [{:as tstate :keys [timer bounds]}]
-                               (if (touch-inside? evt bounds)
-                                 tstate
-                                 (do (js/clearTimeout timer)
-                                     (assoc tstate :timer nil))))
-              :on-touch-cancel identity)))
+(defn client-rect->bounds [^js client-rect]
+  {:x1 (.-left client-rect)
+   :x2 (.-right client-rect)
+   :y1 (.-top client-rect)
+   :y2 (.-bottom client-rect)})
+
+
+(defn- handle-click-event [click-state-atom ^js evt]
+  (.preventDefault evt)
+  (r/rswap! click-state-atom
+            (case (.-type evt)
+              ; Start of user interaction. Clear pending timeouts, start new timeout and
+              ; save component bounds:
+              ("mousedown" "touchstart")
+              (fn [{:as click-state :keys [timer]}]
+                (when timer
+                  (js/clearTimeout timer))
+                (assoc click-state
+                       :timer (js/setTimeout handle-click-event flag-delay click-state-atom timer-evt)
+                       :bounds (-> evt .-target (.getBoundingClientRect) (client-rect->bounds))))
+
+              ; Moving. If we are in user interaction, check if the user is still
+              ; within the cell bounds. If not, cancel interaction.
+              ("mousemove" "touchmove")
+              (fn [{:as click-state :keys [timer bounds]}]
+                (if (or (nil? timer) (evt-inside? evt bounds))
+                  click-state
+                  (do (js/clearTimeout timer)
+                      (assoc click-state :timer nil))))
+
+              ; End of user interaction. If we end up here with timer, it means that the
+              ; interaction was completed within the same DOM element that it started, *AND* that
+              ; interacton ended before the timer was fired. This means it's regular click.
+              ("mouseup" "touchend")
+              (fn [{:as click-state :keys [timer coords]}]
+                (when timer
+                  (js/clearTimeout timer)
+                  (play! (:game/game @state) coords))
+                (assoc click-state :timer nil))
+
+              ; Fired when click has been active for flag-delay milliseconds. This means it's
+              ; a "long" click and we need to toggle the flag.
+              "timer"
+              (fn [{:as click-state :keys [timer coords]}]
+                (when timer
+                  (js/clearTimeout timer)
+                  (toggle-flag! (:game/game @state) coords))
+                (assoc click-state :timer nil)))))
+
+
+(defn prevent-default [^js evt]
+  (.preventDefault evt))
 
 
 (defn- cell [_component coords _border]
-  (let [touch-state (r/atom {:coords coords})
-        on-touch-start (partial touch-event touch-state :on-touch-start)
-        on-touch-move (partial touch-event touch-state :on-touch-move)
-        on-touch-end (partial touch-event touch-state :on-touch-end)
-        on-touch-cancel (partial touch-event touch-state :on-touch-cancel)]
+  (let [click-state (r/atom {:coords coords})
+        click-event-handler (partial handle-click-event click-state)]
     (fn [component coords border]
       (let [cell    (-> @state :game/game :game/board (get coords))
-            hidden? (#{:cell.state/hidden :cell.state/flagged}
-                     (:cell/state cell))]
+            hidden? (#{:cell.state/hidden :cell.state/flagged} (:cell/state cell))]
         [component
-         {:on-touch-start on-touch-start
-          :on-touch-move on-touch-move
-          :on-touch-end on-touch-end
-          :on-touch-cancel on-touch-cancel
+         {:on-touch-start click-event-handler
+          :on-touch-move click-event-handler
+          :on-touch-end click-event-handler
+          :on-mouse-down click-event-handler
+          :on-mouse-move click-event-handler
+          :on-mouse-up click-event-handler
 
-          :on-click (fn [evt]
-                      (.preventDefault evt)
-                      (play! (:game/game @state) coords))
-
-          ; Safari iOS does not generate on-context-menu, handled
-          ; by on-touch events:
-          :on-context-menu (fn [evt]
-                             (.preventDefault evt))
+          :on-click prevent-default
+          :on-context-menu prevent-default
 
           :style
           {:display             "grid"
