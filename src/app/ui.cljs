@@ -17,57 +17,58 @@
    7 "#000000"
    8 "#808080"})
 
+
 (def levels
   {:game.level/easy         {:game/width 9 :game/height 9 :game/mines-count 10}
    :game.level/intermediate {:game/width 16 :game/height 16 :game/mines-count 40}
    :game.level/expert       {:game/width 30 :game/height 16 :game/mines-count 99}})
 
+
 (def init-state
   {:game/history []
    :game/level   :game.level/easy
-   :game/game    (game/make-game (:game.level/easy levels))})
+   :game/game    (game/make-game (:game.level/easy levels))
+   :inter/timer  nil})
+
 
 (defonce state
   (r/atom init-state))
 
-(defn play!
-  [game coords]
-  (swap! state assoc :game/game (game/play game coords)))
 
-(defn toggle-flag!
-  [game coords]
-  (swap! state assoc :game/game (game/toggle-flag game coords)))
-
-(defn reset-game! [game]
-  (swap! state (fn [old-state]
-                 (-> old-state
-                     (update :game/history conj game)
-                     (assoc :game/game (game/make-game
-                                        (levels (:game/level @state))))))))
+(defn reset-game! []
+  (r/rswap! state (fn [{:as old-state :inter/keys [timer] :game/keys [game]}]
+                    (when timer
+                      (js/clearTimeout timer))
+                    (-> old-state
+                        (update :game/history conj game)
+                        (assoc :game/game (game/make-game
+                                           (levels (:game/level old-state))))))))
 
 (defn select-level!
   [level]
-  (swap! state assoc :game/level level)
-  (reset-game! (:game/game @state)))
+  (r/rswap! state assoc :game/level level)
+  (reset-game!))
+
 
 (defn level-selector
   []
   (into [:<>]
         (for [[k _] levels]
-          [:button
+          [:button.noselect
            {:style    {:display "inline-block"}
             :on-click #(select-level! k)}
            (name k)])))
 
+
 (defn reset-button
   []
-  [:button
+  [:button.noselect
    {:style
     {:display   "inline-block"
      :font-size "2em"
      :border    "none"
      :cursor    "pointer"}
-    :on-click #(reset-game! (:game/game @state))}
+    :on-click   reset-game!}
    (condp = (-> @state :game/game :game/status)
      :game.status/win  "😎"
      :game.status/boom "🌚"
@@ -95,9 +96,12 @@
 
 
 (def flag-delay 200)
-(def timer-evt (doto (js/Object.)
-                 (go/set "type" "timer")
-                 (go/set "preventDefault" identity)))
+
+
+(defn make-timer-evt []
+  (doto (js/Object.)
+    (go/set "type" "timer")
+    (go/set "preventDefault" identity)))
 
 
 (defn client-rect->bounds [^js client-rect]
@@ -107,101 +111,132 @@
    :y2 (.-bottom client-rect)})
 
 
-(defn- handle-click-event [click-state-atom ^js evt]
+(defn get-target-coords [^js target]
+  (when target
+    (let [dataset (-> target .-dataset)]
+      (if (-> dataset .-cell (= "true"))
+        [(-> dataset .-x (js/parseInt 10)) (-> dataset .-y (js/parseInt 10))]
+        (recur (.-parentElement target))))))
+
+
+(defn- handle-click-event [^js evt]
   (.preventDefault evt)
-  (r/rswap! click-state-atom
+  (r/rswap! state
             (case (.-type evt)
-              ; Start of user interaction. Clear pending timeouts, start new timeout and
-              ; save component bounds:
+              ; If this was right mouse click, or left click with either ctrl or meta,
+              ; toggle the flag without delay. Otherwise start user interaction. Clear 
+              ; possible pending timeout, start new timeout and save component bounds 
+              ; and coords to state. Also, save the synthetic timer-evt to state, when 
+              ; timer elapses we verify that the event is the same, so that possible 
+              ; stray timers don't confuse our state management.
               ("mousedown" "touchstart")
-              (fn [{:as click-state :keys [timer]}]
+              (fn [{:as state :inter/keys [timer] :game/keys [game]}]
+                (js/console.log "e" evt)
                 (when timer
                   (js/clearTimeout timer))
-                (assoc click-state
-                       :timer (js/setTimeout handle-click-event flag-delay click-state-atom timer-evt)
-                       :bounds (-> evt .-target (.getBoundingClientRect) (client-rect->bounds))))
+                (let [timer-evt (make-timer-evt)
+                      coords (-> evt .-target (get-target-coords))]
+                  (if (or (-> evt .-ctrlKey)
+                          (-> evt .-metaKey)
+                          (-> evt .-button (= 2)))
+                    (assoc state
+                           :game/game (game/toggle-flag game coords)
+                           :inter/timer nil)
+                    (assoc state
+                           :inter/timer (js/setTimeout handle-click-event flag-delay timer-evt)
+                           :inter/timer-evt timer-evt
+                           :inter/bounds (-> evt .-target (.getBoundingClientRect) (client-rect->bounds))
+                           :inter/coords (-> evt .-target (get-target-coords))))))
 
               ; Moving. If we are in user interaction, check if the user is still
-              ; within the cell bounds. If not, cancel interaction.
+              ; within the cell bounds. If not, cancel the interaction.
               ("mousemove" "touchmove")
-              (fn [{:as click-state :keys [timer bounds]}]
+              (fn [{:as state :inter/keys [timer bounds]}]
                 (if (or (nil? timer) (evt-inside? evt bounds))
-                  click-state
+                  state
                   (do (js/clearTimeout timer)
-                      (assoc click-state :timer nil))))
+                      (assoc state :inter/timer nil))))
 
-              ; End of user interaction. If we end up here with timer, it means that the
-              ; interaction was completed within the same DOM element that it started, *AND* that
-              ; interacton ended before the timer was fired. This means it's regular click.
+              ; End of user interaction. If we end up here with timer, it means that 
+              ; the interaction was completed within the same DOM element that it 
+              ; started, *AND* that interacton ended before the timer was fired. This 
+              ; means it's regular click.
               ("mouseup" "touchend")
-              (fn [{:as click-state :keys [timer coords]}]
-                (when timer
-                  (js/clearTimeout timer)
-                  (play! (:game/game @state) coords))
-                (assoc click-state :timer nil))
+              (fn [{:as state :inter/keys [timer coords] :game/keys [game]}]
+                (if timer
+                  (do (js/clearTimeout timer)
+                      (assoc state
+                             :game/game (game/play game coords)
+                             :inter/timer nil))
+                  state))
 
-              ; Fired when click has been active for flag-delay milliseconds. This means it's
-              ; a "long" click and we need to toggle the flag.
+              ; Fired when click has been active for flag-delay milliseconds. This 
+              ; means it's a "long" click and we need to toggle the flag. Verify that
+              ; the received event is the one saved in state.
               "timer"
-              (fn [{:as click-state :keys [timer coords]}]
-                (when timer
-                  (js/clearTimeout timer)
-                  (toggle-flag! (:game/game @state) coords))
-                (assoc click-state :timer nil)))))
+              (fn [{:as state :inter/keys [timer timer-evt coords] :game/keys [game]}]
+                (if (and (some? timer) (identical? evt timer-evt))
+                  (assoc state
+                         :game/game (game/toggle-flag game coords)
+                         :inter/timer nil)
+                  state)))))
 
 
 (defn prevent-default [^js evt]
   (.preventDefault evt))
 
 
-(defn- cell [_component coords _border]
-  (let [click-state (r/atom {:coords coords})
-        click-event-handler (partial handle-click-event click-state)]
-    (fn [component coords border]
-      (let [cell    (-> @state :game/game :game/board (get coords))
-            hidden? (#{:cell.state/hidden :cell.state/flagged} (:cell/state cell))]
-        [component
-         {:on-touch-start click-event-handler
-          :on-touch-move click-event-handler
-          :on-touch-end click-event-handler
-          :on-mouse-down click-event-handler
-          :on-mouse-move click-event-handler
-          :on-mouse-up click-event-handler
+(defn- cell [coords border]
+  (let [[x y] coords
+        cell    (-> @state :game/game :game/board (get coords))
+        hidden? (#{:cell.state/hidden :cell.state/flagged} (:cell/state cell))]
+    [:div.noselect
+     {:data-x (str x)
+      :data-y (str y)
+      :data-cell "true"
 
-          :on-click prevent-default
-          :on-context-menu prevent-default
+      :on-touch-start handle-click-event
+      :on-touch-move handle-click-event
+      :on-touch-end handle-click-event
+      :on-mouse-down handle-click-event
+      :on-mouse-move handle-click-event
+      :on-mouse-up handle-click-event
 
-          :style
-          {:display             "grid"
-           :align-items         "center"
-           :aspect-ratio        "1"
-           :cursor              (if hidden? "pointer" "default")
-           :box-shadow          (if hidden?
-                                  ".08em .08em #ffffff inset, -.08em -.08em grey inset"
-                                  "initial")
-           :border              border
-           :outline             0
-           :background-color    "#c0c0c0"
-           :font-weight         "bold"
-           :font-size           "200%"
-           :text-align          "center"
-           :color               (value-colors (:cell/value cell))}}
+      :on-click prevent-default
+      :on-context-menu prevent-default
+
+      :style
+      {:display             "grid"
+       :align-items         "center"
+       :aspect-ratio        "1"
+       :cursor              (if hidden? "pointer" "default")
+       :box-shadow          (if hidden?
+                              ".08em .08em #ffffff inset, -.08em -.08em grey inset"
+                              "initial")
+       :border              border
+       :outline             0
+       :background-color    "#c0c0c0"
+       :font-weight         "bold"
+       :font-size           "200%"
+       :text-align          "center"
+       :color               (value-colors (:cell/value cell))}}
 
        ;; Cell content
-         [:div.noselect
-          {:style
-           {:text-align "center"}}
+     [:div.noselect
+      {:style
+       {:text-align "center"}}
 
-          (condp = (:cell/state cell)
-            :cell.state/hidden
-            \u2003 ;ZSWP
+      (condp = (:cell/state cell)
+        :cell.state/hidden
+        \u2003 ;ZSWP
 
-            :cell.state/flagged
-            [:span {:style {:font-size ".8em"}} "🚩"]
+        :cell.state/flagged
+        [:span {:style {:font-size ".8em"}} "🚩"]
 
-            (if (= :cell.value/boom (:cell/value cell))
-              [:span {:style {:font-size ".8em"}} "🙀"]
-              (str (:cell/value cell))))]]))))
+        (if (= :cell.value/boom (:cell/value cell))
+          [:span {:style {:font-size ".8em"}} "🙀"]
+          (str (:cell/value cell))))]]))
+
 
 (defn grid []
   (let [width  (-> @state :game/level levels :game/width)
@@ -219,12 +254,12 @@
      (for [row  (range height)
            col  (range width)
            :let [coords [col row]]]
-       [cell :div coords border]))))
+       [cell coords border]))))
 
 (defn game
   []
   [:div
-   [:div {:style {:display "flex" :align-items "center"}}
+   [:div.noselect {:style {:display "flex" :align-items "center"}}
     [level-selector]
     [reset-button]]
    [grid]])
