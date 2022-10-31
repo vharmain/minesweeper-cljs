@@ -41,7 +41,7 @@
      :cell/value  (calc-value coords mines)}))
 
 (defn make-game
-  [#:game{:keys [width height mines-count]}]
+  [{:game/keys [width height mines-count]}]
   (let [init {:game/status      :game.status/ok
               :game/mines-count mines-count}]
     (->> (gen-mines width height)
