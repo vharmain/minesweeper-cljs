@@ -41,9 +41,10 @@
      :cell/value  (calc-value coords mines)}))
 
 (defn make-game
-  [{:game/keys [width height mines-count]}]
+  [{:game/keys [width height mines-count hints-count]}]
   (let [init {:game/status      :game.status/ok
-              :game/mines-count mines-count}]
+              :game/mines-count mines-count
+              :game/hints-count hints-count}]
     (->> (gen-mines width height)
          distinct
          (take mines-count)
@@ -88,6 +89,17 @@
        :game/board
        vals
        (filter (fn [cell] (= :cell.value/boom (:cell/value cell))))))
+
+(defn hintable-cells
+  "Returns cells that can be revealed as a hint, i.e. cells that are
+   not revealed, not flagged and not mines"
+  [game]
+  (->> game
+       :game/board
+       vals
+       (filter (fn [cell] (and (= :cell.state/hidden (:cell/state cell))
+                               (not= :cell.state/flagged (:cell/state cell))
+                               (not= :cell.value/boom (:cell/value cell)))))))
 
 (defn win?
   [game]
@@ -139,5 +151,15 @@
 
     game))
 
+(defn hint
+  [game]
+  (if (pos? (:game/hints-count game))
+    (let [hintable-cells (hintable-cells game)
+          cell           (rand-nth hintable-cells)]
+      (-> game
+          (play (:cell/coords cell))
+          (update :game/hints-count dec)))
+    game))
+
 (comment
-  (make-game {:game/width 1 :game/height 5 :game/mines-count 1}))
+  (make-game {:game/width 1 :game/height 5 :game/mines-count 1 :game/hints-count 0}))

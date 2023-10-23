@@ -24,9 +24,10 @@
 
 (s/def :game/status #{:game.status/ok :game.status/win :game.status/boom})
 (s/def :game/mines-count (s/int-in 0 100))
+(s/def :game/hints-count (s/int-in 0 3))
 
 (s/def :game/game
-  (s/keys :req [:game/board :game/status :game/mines-count]))
+  (s/keys :req [:game/board :game/status :game/mines-count :game/hints-count]))
 
 (comment
   (s/valid? :cell.value/boom :cell.value/boom)
