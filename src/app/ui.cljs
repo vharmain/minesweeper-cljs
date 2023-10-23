@@ -7,9 +7,9 @@
 
 
 (def levels
-  {:game.level/easy         {:game/width 9 :game/height 9 :game/mines-count 10}
-   :game.level/intermediate {:game/width 16 :game/height 16 :game/mines-count 40}
-   :game.level/expert       {:game/width 30 :game/height 16 :game/mines-count 99}})
+  {:game.level/easy         {:game/width 9 :game/height 9 :game/mines-count 10 :game/hints-count 3}
+   :game.level/intermediate {:game/width 16 :game/height 16 :game/mines-count 40 :game/hints-count 2}
+   :game.level/expert       {:game/width 30 :game/height 16 :game/mines-count 99 :game/hints-count 1}})
 
 
 (def init-state
@@ -38,6 +38,10 @@
   (reset-game!))
 
 
+(defn use-hint! []
+  (r/rswap! app-state assoc :game/game (game/hint (:game/game @app-state))))
+
+
 (defn level-selector []
   (into [:<>]
         (for [[k _] levels]
@@ -52,6 +56,14 @@
      :game.status/win  "😎"
      :game.status/boom "🌚"
      "🌝")])
+
+
+(defn hint-button [{:keys [status hints-count]}]
+  [:button.hint {:on-click use-hint! :disabled (or (not= status :game.status/ok) (zero? hints-count))}
+   (case hints-count
+     (0) "All hints used!"
+     (1) "🪄 1 hint left"
+     (str "🪄 " hints-count " hints left"))])
 
 
 (defn get-touch-xy [^js evt]
@@ -219,5 +231,7 @@
     [:div
      [:div.controls
       [level-selector]
-      [reset-button {:status (-> state :game/game :game/status)}]]
+      [reset-button {:status (-> state :game/game :game/status)}]
+      [hint-button {:status (-> state :game/game :game/status)
+                    :hints-count (-> state :game/game :game/hints-count)}]]
      [grid {:state state}]]))
