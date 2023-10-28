@@ -39,7 +39,7 @@
 
 
 (defn use-hint! []
-  (r/rswap! app-state assoc :game/game (game/hint (:game/game @app-state))))
+  (r/rswap! app-state update :game/game game/hint))
 
 
 (defn level-selector []
